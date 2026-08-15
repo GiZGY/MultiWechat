@@ -15,6 +15,6 @@ git tag -a v0.2.0 -m "MultiWechat 0.2.0"
 git push origin v0.2.0
 ```
 
-`Release` workflow 会验证标签与 Changelog，运行测试，构建 Apple Silicon 与 Intel 通用架构的 DMG/ZIP，生成 SHA-256 校验文件，并发布 GitHub Release。
+`Release` workflow 会验证标签来自 `main` 且 Changelog 已更新，随后在只读 job 中运行测试、构建 Apple Silicon 与 Intel 通用架构的 DMG/ZIP，并生成 SHA-256 校验文件。构建完成后，需要维护者在 GitHub `release` 环境中批准，独立的发布 job 才会获得临时写权限并创建 Release。
 
 默认公开构建使用 ad-hoc 签名。具备 Developer ID 与公证凭据时，可在可信本机环境通过 `CODESIGN_IDENTITY` 和 `NOTARY_PROFILE` 调用 `scripts/build-release.sh`；签名证书和公证凭据不得写入仓库或 GitHub Actions 日志。
