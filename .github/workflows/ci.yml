@@ -2,20 +2,12 @@ name: CI
 
 on:
   pull_request:
-    paths:
-      - "Package.swift"
-      - "Sources/**"
-      - "Tests/**"
-      - "scripts/**"
-      - ".github/workflows/ci.yml"
   push:
     branches: [main]
-    paths:
-      - "Package.swift"
-      - "Sources/**"
-      - "Tests/**"
-      - "scripts/**"
-      - ".github/workflows/ci.yml"
+  merge_group:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -23,10 +15,18 @@ concurrency:
 
 jobs:
   test:
+    name: test
     runs-on: macos-15
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate repository
+        run: |
+          git diff --check
+          bash -n scripts/build-app.sh scripts/build-release.sh scripts/install-menu-app.sh
       - name: Test
         run: swift test
       - name: Release build

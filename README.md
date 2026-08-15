@@ -67,6 +67,8 @@ MultiWechat 是独立开源项目，与腾讯或微信无隶属、合作或认�
 
 提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请按 [SECURITY.md](SECURITY.md) 中的方式报告。
 
+项目通过 CODEOWNERS、受保护分支和必需 CI 审核外部贡献。发布流程见 [Release Process](docs/RELEASING.md)，社区行为标准见 [Code of Conduct](CODE_OF_CONDUCT.md)。
+
 ## 许可证
 
 [MIT](LICENSE)
