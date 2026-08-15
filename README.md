@@ -2,7 +2,9 @@
 
 一款原生 macOS 微信多开助手。它为每个微信分身创建独立 App、Bundle ID 和数据容器，并在微信更新后自动重建分身。
 
-![MultiWechat 图标](assets/WxMultiIcon-1024.png)
+<p align="center">
+  <img src="assets/WxMultiIcon-1024.png" width="220" alt="MultiWechat 图标">
+</p>
 
 ## 功能
 
