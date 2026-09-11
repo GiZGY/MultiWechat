@@ -351,8 +351,7 @@ struct WeChatBinaryPatcher {
     }
 
     private func resign(appURL: URL) throws {
-        _ = try runner.run("/usr/bin/codesign", ["--remove-sign", appURL.path], allowFailure: true)
-        try runner.run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appURL.path])
+        try AppSigner().sign(appURL: appURL)
         try runner.run("/usr/bin/xattr", ["-cr", appURL.path], allowFailure: true)
     }
 

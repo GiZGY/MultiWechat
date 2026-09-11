@@ -116,7 +116,7 @@ final class ProcessStatus: @unchecked Sendable {
         guard !appPaths.isEmpty else {
             return .empty
         }
-        let appPathByExecutablePath = Dictionary(uniqueKeysWithValues: appPaths.map { appPath in
+        let appPathByExecutablePath = Dictionary(Set(appPaths).map { appPath in
             let executable = URL(fileURLWithPath: appPath)
                 .appendingPathComponent("Contents", isDirectory: true)
                 .appendingPathComponent("MacOS", isDirectory: true)
@@ -124,7 +124,7 @@ final class ProcessStatus: @unchecked Sendable {
                 .standardizedFileURL
                 .path
             return (executable, appPath)
-        })
+        }, uniquingKeysWith: { first, _ in first })
         var pidsByAppPath: [String: Set<Int32>] = [:]
         for app in NSWorkspace.shared.runningApplications {
             guard let executablePath = app.executableURL?.standardizedFileURL.path else {

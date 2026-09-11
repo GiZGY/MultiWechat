@@ -23,6 +23,8 @@
 
 当前公开构建为 ad-hoc 签名版本。首次打开时如 macOS 提示无法验证开发者，请在访达中右键 `MultiWechat.app`，选择“打开”。项目尚未完成 Apple 公证。
 
+部分 macOS 版本需要在“系统设置 → 隐私与安全性”中选择“仍要打开”。更新助手或重建微信分身后，系统可能要求重新授予权限；固定应用标识符不能保证 ad-hoc 签名的授权跨版本保留。
+
 要求：macOS 13 或更高版本，并已在 `/Applications` 安装官方微信。
 
 ## 使用
@@ -38,7 +40,7 @@
 
 ## 已知限制
 
-- 视频号视频和部分小程序视频卡片在分身中可能无法打开；普通网页、PDF 和 Office 文件链路已可用。
+- 0.1.1 修复了 AppEx 启动路径错误引起的小程序和视频无法打开问题。微信后续版本及不同内容仍可能存在兼容性差异。
 - 微信升级可能改变内部结构。MultiWechat 会自动重建托管分身，但无法保证兼容未来所有微信版本。
 - 当前 Release 未使用 Apple Developer ID 签名和公证。
 
@@ -52,7 +54,7 @@ scripts/install-menu-app.sh
 构建通用架构 Release：
 
 ```bash
-scripts/build-release.sh 0.1.0
+scripts/build-release.sh 0.1.1
 ```
 
 产物会写入 `dist/`。CLI 与实验性硬多开入口见 [CLI 文档](docs/CLI.md)，架构决策见 [ADR](docs/adr/)。
