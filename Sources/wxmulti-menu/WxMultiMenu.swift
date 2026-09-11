@@ -21,7 +21,6 @@ final class StatusBarController: NSObject {
     private var runningSnapshot = RunningAppSnapshot.empty
     private var storageByID: [String: StorageItem] = [:]
     private var cachedStorageSizes: [String: CachedStorageSize] = [:]
-    private var isRefreshingStatus = false
     private var isRefreshingStorage = false
     private var needsStorageRefresh = false
     private var needsStorageRefreshWithSizes = false
@@ -120,17 +119,10 @@ final class StatusBarController: NSObject {
         return false
     }
 
-    private func refreshStatusAsync(userInitiated: Bool = false, clearingInstanceID: String? = nil) {
-        guard !isRefreshingStatus else {
-            if userInitiated {
-                setActionStatus("正在刷新", clearsAfter: nil)
-            }
-            return
-        }
+    private func refreshStatusAsync(userInitiated: Bool = false, clearingInstanceID: String? = nil, refreshStorage: Bool = true) {
         if userInitiated {
             setActionStatus("正在刷新", clearsAfter: nil)
         }
-        isRefreshingStatus = true
         let instances = store.read()
         let appPaths = [OfficialWeChatApp.sourcePath] + instances.map(\.appPath)
         let running = processStatus.runningSnapshot(appPaths: appPaths)
@@ -139,8 +131,7 @@ final class StatusBarController: NSObject {
         if let clearingInstanceID {
             rowStatusByInstanceID.removeValue(forKey: clearingInstanceID)
         }
-        isRefreshingStatus = false
-        if statusChanged, popover.isShown {
+        if refreshStorage, statusChanged, popover.isShown {
             refreshStorageAsync(includeDataSizes: false)
         }
         if userInitiated {
@@ -183,15 +174,19 @@ final class StatusBarController: NSObject {
                     self.updateStorageSizeCache(from: nextStorage)
                 }
                 self.isRefreshingStorage = false
+                if storageChanged, self.popover.isShown {
+                    self.updatePopover()
+                }
                 if self.needsStorageRefresh {
                     let includeSizes = self.needsStorageRefreshWithSizes
                     self.refreshStorageAsync(includeDataSizes: includeSizes)
                     return
                 }
-                if storageChanged {
-                    self.updatePopover()
+                let now = Int64(Date().timeIntervalSince1970 * 1000)
+                let hasStaleSizes = nextStorage.values.contains {
+                    !$0.isDataSizeKnown || now - (self.cachedStorageSizes[$0.id]?.updatedAt ?? 0) >= 300_000
                 }
-                if !includeDataSizes, self.popover.isShown, nextStorage.values.contains(where: { !$0.isDataSizeKnown }) {
+                if !includeDataSizes, self.popover.isShown, hasStaleSizes {
                     self.refreshStorageAsync(includeDataSizes: true)
                 }
             }
@@ -211,7 +206,7 @@ final class StatusBarController: NSObject {
     }
 
     private func updateStorageSizeCache(from storage: [String: StorageItem]) {
-        var next = cachedStorageSizes
+        var next = cachedStorageSizes.filter { storage[$0.key] != nil }
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         for item in storage.values where item.isDataSizeKnown {
             next[item.id] = CachedStorageSize(dataBytes: item.dataBytes, updatedAt: timestamp)
@@ -221,7 +216,7 @@ final class StatusBarController: NSObject {
     }
 
     private func refreshPanelData(userInitiated: Bool = false) {
-        refreshStatusAsync(userInitiated: userInitiated)
+        refreshStatusAsync(userInitiated: userInitiated, refreshStorage: false)
         refreshStorageAsync(includeDataSizes: userInitiated)
     }
 

@@ -13,7 +13,6 @@ struct StorageItem: Equatable {
     var appPath: String?
     var containerPath: String
     var containerExists: Bool
-    var appBytes: UInt64
     var dataBytes: UInt64
     var isDataSizeKnown: Bool
     var accounts: [StorageAccountRecord]
@@ -22,13 +21,15 @@ struct StorageItem: Equatable {
     var isRunning: Bool
 
     var latestAccountID: String? {
-        activeAccountID ?? accounts.sorted { $0.modifiedAt > $1.modifiedAt }.first?.id
+        activeAccountID ?? accounts.max(by: { $0.modifiedAt < $1.modifiedAt })?.id
     }
 }
 
 final class StorageInspector: @unchecked Sendable {
     private let fileManager = FileManager.default
     private let home = FileManager.default.homeDirectoryForCurrentUser
+    private let accountCacheLock = NSLock()
+    private var accountCache = AccountLookupCache()
 
     func scan(instances: [MenuInstance], runningSnapshot: RunningAppSnapshot, includeDataSizes: Bool) -> [StorageItem] {
         var items = [
@@ -131,7 +132,7 @@ final class StorageInspector: @unchecked Sendable {
         let containerURL = containerURL(bundleIdentifier: bundleIdentifier)
         let containerExists = fileManager.fileExists(atPath: containerURL.path)
         let dataBytes = includeDataSize ? directorySize(containerURL) : 0
-        let activeAccountID = activeAccountID(containerURL: containerURL, pids: runningPids)
+        let activeAccountID = cachedActiveAccountID(containerURL: containerURL, pids: runningPids, force: includeDataSize)
         return StorageItem(
             id: id,
             title: title,
@@ -139,7 +140,6 @@ final class StorageInspector: @unchecked Sendable {
             appPath: appPath,
             containerPath: containerURL.path,
             containerExists: containerExists,
-            appBytes: 0,
             dataBytes: dataBytes,
             isDataSizeKnown: includeDataSize,
             accounts: accountRecords(containerURL: containerURL, activeAccountID: activeAccountID),
@@ -253,6 +253,16 @@ final class StorageInspector: @unchecked Sendable {
         return nil
     }
 
+    private func cachedActiveAccountID(containerURL: URL, pids: [Int32], force: Bool) -> String? {
+        guard !pids.isEmpty else { return nil }
+        let key = containerURL.path + ":" + pids.sorted().map(String.init).joined(separator: ",")
+        accountCacheLock.lock()
+        defer { accountCacheLock.unlock() }
+        return accountCache.value(for: key, force: force) {
+            activeAccountID(containerURL: containerURL, pids: pids)
+        }
+    }
+
     private func lsofOutput(pid: Int32) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
@@ -282,6 +292,23 @@ final class StorageInspector: @unchecked Sendable {
             return String(name[..<suffixRange.lowerBound])
         }
         return name
+    }
+}
+
+struct AccountLookupCache {
+    private struct Entry {
+        var accountID: String?
+        var expiresAt: TimeInterval
+    }
+    private var entries: [String: Entry] = [:]
+
+    mutating func value(for key: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime,
+                        force: Bool = false, lookup: () -> String?) -> String? {
+        entries = entries.filter { $0.value.expiresAt > now }
+        if !force, let entry = entries[key] { return entry.accountID }
+        let result = lookup()
+        entries[key] = Entry(accountID: result, expiresAt: now + 30)
+        return result
     }
 }
 

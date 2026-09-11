@@ -351,7 +351,7 @@ struct WeChatInstanceManager {
         try runner.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", targetAppURL.path], allowFailure: true)
         try rewriteMainInfoPlist(appURL: targetAppURL, bundleID: bundleID, name: name)
         try rewriteNestedAppBundleIdentifiers(appURL: targetAppURL, id: id)
-        try installLaunchWrapper(appURL: targetAppURL, bundleID: bundleID, source: source)
+        try restoreAppExExecutable(appURL: targetAppURL, source: source)
         try installFrameworkHelperWrappers(appURL: targetAppURL, bundleID: bundleID, source: source)
 
         print("正在重新签名...")
@@ -379,19 +379,7 @@ struct WeChatInstanceManager {
             to: entitlementURL
         )
 
-        if mode == .none {
-            try runner.run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", targetAppURL.path])
-        } else {
-            try runner.run("/usr/bin/codesign", [
-                "--force",
-                "--deep",
-                "--sign",
-                "-",
-                "--entitlements",
-                entitlementURL.path,
-                targetAppURL.path,
-            ])
-        }
+        try AppSigner().sign(appURL: targetAppURL, entitlements: mode == .none ? nil : entitlementURL)
     }
 
     private func prepareAppForLaunch(instance: InstanceProfile, source: WeChatAppInfo) throws {
@@ -400,7 +388,7 @@ struct WeChatInstanceManager {
         if try restoreMainExecutableIfWrapped(appURL: appURL) {
             changed = true
         }
-        if try installLaunchWrapper(appURL: appURL, bundleID: instance.bundleIdentifier, source: source) {
+        if try restoreAppExExecutable(appURL: appURL, source: source) {
             changed = true
         }
         if try installFrameworkHelperWrappers(appURL: appURL, bundleID: instance.bundleIdentifier, source: source) {
@@ -582,94 +570,17 @@ struct WeChatInstanceManager {
     }
 
     @discardableResult
-    private func installLaunchWrapper(appURL: URL, bundleID: String, source: WeChatAppInfo) throws -> Bool {
-        let executableURL = appURL
-            .appendingPathComponent("Contents", isDirectory: true)
-            .appendingPathComponent("MacOS", isDirectory: true)
-            .appendingPathComponent("WeChatAppEx.app", isDirectory: true)
-            .appendingPathComponent("Contents", isDirectory: true)
-            .appendingPathComponent("MacOS", isDirectory: true)
-            .appendingPathComponent("WeChatAppEx")
-        let macOSURL = executableURL.deletingLastPathComponent()
-        let contentsURL = macOSURL.deletingLastPathComponent()
-        let realDirURL = macOSURL.appendingPathComponent("WeChatAppEx.real", isDirectory: true)
-        let realURL = realDirURL.appendingPathComponent("WeChatAppEx")
-        let legacyRealURL = macOSURL.appendingPathComponent("WeChatAppEx.real")
-        let legacyRealDirURL = contentsURL
-            .appendingPathComponent("MacOS.real", isDirectory: true)
-            .appendingPathComponent("WeChatAppEx")
-        let frameworkLinkURL = macOSURL.appendingPathComponent("Frameworks")
-        let manager = FileManager.default
-        var changed = false
-        if !manager.fileExists(atPath: realURL.path) {
-            try manager.createDirectory(at: realDirURL, withIntermediateDirectories: true)
-            var isDirectory: ObjCBool = false
-            if manager.fileExists(atPath: legacyRealURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
-                try manager.moveItem(at: legacyRealURL, to: realURL)
-                changed = true
-            } else if manager.fileExists(atPath: legacyRealDirURL.path) {
-                try manager.moveItem(at: legacyRealDirURL, to: realURL)
-                try? manager.removeItem(at: legacyRealDirURL.deletingLastPathComponent())
-                changed = true
-            } else if manager.fileExists(atPath: executableURL.path) {
-                try manager.moveItem(at: executableURL, to: realURL)
-                changed = true
-            } else {
-                try fail("缺少 WeChatAppEx 可执行文件: \(executableURL.path)")
-            }
-        }
-        if !manager.fileExists(atPath: frameworkLinkURL.path) {
-            try manager.createSymbolicLink(atPath: frameworkLinkURL.path, withDestinationPath: "../Frameworks")
-            changed = true
-        }
-        let profile = try sourceLaunchProfile(source: source)
-        let script = launchWrapperScript(
-            profile: profile,
-            containerDataPath: containerDataURL(bundleIdentifier: bundleID).path
-        )
-        let existing = try? String(contentsOf: executableURL, encoding: .utf8)
-        if existing != script {
-            try script.write(to: executableURL, atomically: true, encoding: .utf8)
-            try runner.run("/bin/chmod", ["755", executableURL.path])
-            changed = true
-        }
-        return changed
-    }
-
-    private func launchWrapperScript(profile: LaunchProfile, containerDataPath: String) -> String {
-        """
-        #!/bin/zsh
-        set -u
-
-        CONTAINER_DATA="\(shellLiteral(containerDataPath))"
-        CLIENT_VERSION="\(shellLiteral(profile.clientVersion ?? ""))"
-        UNIFIED_VERSION="\(shellLiteral(profile.unifiedPCMacWechat ?? ""))"
-        RUNTIME_BUNDLE_ID="\(shellLiteral(profile.runtimeBundleIdentifier ?? ""))"
-        REAL="${0:A:h}/WeChatAppEx.real/WeChatAppEx"
-
-        /bin/mkdir -p "$CONTAINER_DATA/tmp"
-        export HOME="$CONTAINER_DATA"
-        export CFFIXED_USER_HOME="$CONTAINER_DATA"
-        export TMPDIR="$CONTAINER_DATA/tmp/"
-        export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-        cd "${0:A:h}" || exit 1
-
-        args=()
-        for arg in "$@"; do
-          if [[ -n "$CLIENT_VERSION" && "$arg" == --client_version=* ]]; then
-            arg="--client_version=$CLIENT_VERSION"
-          fi
-          if [[ -n "$RUNTIME_BUNDLE_ID" && "$arg" == --bundle-id=* ]]; then
-            arg="--bundle-id=$RUNTIME_BUNDLE_ID"
-          fi
-          if [[ -n "$UNIFIED_VERSION" && "$arg" == --wechat-sub-user-agent=* ]]; then
-            arg="$(/usr/bin/sed -E "s/UnifiedPCMacWechat\\(0x[0-9A-Fa-f]+\\)/UnifiedPCMacWechat(${UNIFIED_VERSION})/g" <<< "$arg")"
-          fi
-          args+=("$arg")
-        done
-
-        exec -a "${0:A}" "$REAL" "${args[@]}"
-        """
+    private func restoreAppExExecutable(appURL: URL, source: WeChatAppInfo) throws -> Bool {
+        let relative = "Contents/MacOS/WeChatAppEx.app/Contents/MacOS/WeChatAppEx"
+        let executable = appURL.appendingPathComponent(relative)
+        let macOS = executable.deletingLastPathComponent()
+        // AppEx resolves its bundle from its actual executable location.
+        return try HelperExecutableRecovery.restoreIfNeeded(at: executable, candidates: [
+            macOS.appendingPathComponent("WeChatAppEx.real/WeChatAppEx"),
+            macOS.appendingPathComponent("WeChatAppEx.real"),
+            macOS.deletingLastPathComponent().appendingPathComponent("MacOS.real/WeChatAppEx"),
+            source.appURL.appendingPathComponent(relative),
+        ])
     }
 
     private func sourceLaunchProfile(source: WeChatAppInfo) throws -> LaunchProfile {
@@ -838,8 +749,7 @@ struct WeChatInstanceManager {
             guard FileManager.default.fileExists(atPath: url.path) else {
                 continue
             }
-            let result = try runner.run("/usr/bin/shasum", ["-a", "256", url.path])
-            let hash = result.stdout.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init) ?? ""
+            let hash = try FileDigest.sha256(at: url)
             let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
             let size = attrs[.size].map { "\($0)" } ?? "0"
             parts.append("\(url.lastPathComponent):\(size):\(hash)")
@@ -889,8 +799,7 @@ struct WeChatInstanceManager {
                 .sorted { $0.path < $1.path }
             let rootPath = root.standardizedFileURL.path
             for fileURL in files {
-                let result = try runner.run("/usr/bin/shasum", ["-a", "256", fileURL.path])
-                let hash = result.stdout.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init) ?? ""
+                let hash = try FileDigest.sha256(at: fileURL)
                 let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
                 let size = values.fileSize.map(String.init) ?? "0"
                 let relativeFilePath = String(fileURL.standardizedFileURL.path.dropFirst(rootPath.count + 1))
@@ -902,8 +811,7 @@ struct WeChatInstanceManager {
             guard manager.fileExists(atPath: fileURL.path) else {
                 continue
             }
-            let result = try runner.run("/usr/bin/shasum", ["-a", "256", fileURL.path])
-            let hash = result.stdout.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init) ?? ""
+            let hash = try FileDigest.sha256(at: fileURL)
             let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
             let size = values.fileSize.map(String.init) ?? "0"
             entries.append("file:\(relative):\(size):\(hash)")

@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-VERSION=0.1.0 CONFIGURATION=debug OUTPUT_APP="$BUILD_APP" "$ROOT_DIR/scripts/build-app.sh"
+VERSION="${VERSION:-0.1.1}" CONFIGURATION="${CONFIGURATION:-release}" OUTPUT_APP="$BUILD_APP" "$ROOT_DIR/scripts/build-app.sh"
 
 CURRENT_EXECUTABLE="$APP_DIR/Contents/MacOS/wxmulti-menu"
 while IFS= read -r pid; do

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 CONFIGURATION="${CONFIGURATION:-release}"
 OUTPUT_APP="${OUTPUT_APP:-$ROOT_DIR/dist/MultiWechat.app}"
@@ -10,7 +10,7 @@ UNIVERSAL="${UNIVERSAL:-0}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-io.github.gizgy.MultiWechat}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
-BUILD_ARGS=(build --package-path "$ROOT_DIR" -c "$CONFIGURATION")
+BUILD_ARGS=(build --jobs "${BUILD_JOBS:-2}" --package-path "$ROOT_DIR" -c "$CONFIGURATION")
 if [[ "$UNIVERSAL" == "1" ]]; then
   BUILD_ARGS+=(--arch arm64 --arch x86_64)
 fi

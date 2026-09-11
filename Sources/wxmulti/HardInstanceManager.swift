@@ -118,8 +118,7 @@ struct HardInstanceManager {
             plist["CFBundleName"] = name
             plist["CFBundleDisplayName"] = name
             try PlistEditor.writeDictionary(plist, to: infoURL)
-            _ = try runner.run("/usr/bin/codesign", ["--remove-sign", instance.appPath], allowFailure: true)
-            try runner.run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", instance.appPath])
+            try AppSigner().sign(appURL: URL(fileURLWithPath: instance.appPath))
             try runner.run("/usr/bin/xattr", ["-cr", instance.appPath], allowFailure: true)
         }
 
